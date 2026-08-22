@@ -1,0 +1,14 @@
+﻿backend/venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+backend/.env
+backend/demand_forecast.db
+backend/lstm_log.txt
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+Thumbs.db
+
+backend/data/raw/sell_prices.csv
+backend/data/raw/sales_train_evaluation.csv
