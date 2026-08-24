@@ -5,8 +5,8 @@
 import axios from 'axios'
 
 const api = axios.create({
-  // In dev, Vite proxies /forecast /inventory /anomalies /explain /chat → http://localhost:8000
-  // In production, set VITE_API_URL to your deployed backend URL.
+  // Dev:  VITE_API_URL is empty → Vite proxy routes all paths → http://localhost:8000
+  // Prod: VITE_API_URL=https://inventory-demand-api-571038545354.us-central1.run.app (set in .env.production)
   baseURL: import.meta.env.VITE_API_URL || '',
   timeout: 30000,
 })

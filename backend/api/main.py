@@ -34,10 +34,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ── CORS — allow the React dev server ─────────────────────────────────────────
+# ── CORS — allow the React dev server and the production frontend ──────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
+    allow_origins=[
+        "http://localhost:5173",           # Vite dev server
+        "http://localhost:3000",           # Alt dev server
+        "https://inventory-demand-api-571038545354.us-central1.run.app",  # Cloud Run backend (self)
+        "*",                               # Allow all (permissive; restrict in production if needed)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

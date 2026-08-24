@@ -6,6 +6,9 @@ export default defineConfig({
 
   server: {
     port: 5173,
+    // DEV-ONLY proxy: routes API paths to the local backend.
+    // In production, VITE_API_URL in .env.production points directly to
+    // https://inventory-demand-api-571038545354.us-central1.run.app
     proxy: {
       '/forecast':  'http://localhost:8000',
       '/inventory': 'http://localhost:8000',
