@@ -29,11 +29,11 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
+      # Public API URL, baked in at build time. (Don't use fromService → host:
+      # that returns the PRIVATE-network hostname, which browsers can't resolve.)
+      # If you rename the API service, update this URL to match.
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: demand-iq-api
-          property: host     # e.g. demand-iq-api.onrender.com — client.js adds https://
+        value: https://demand-iq-api.onrender.com
     routes:
       - type: rewrite
         source: /*

@@ -16,7 +16,9 @@ the slim `backend/requirements.txt`. All features keep working.
 1. Push this repo to GitHub, **including** `backend/demand_forecast.db` (no longer git-ignored).
 2. Render dashboard → **New → Blueprint** → select the repo. `render.yaml` creates:
    - `demand-iq-api`: FastAPI web service (free)
-   - `demand-iq-dashboard`: static React site, with `VITE_API_URL` wired to the API automatically
+   - `demand-iq-dashboard`: static React site, calling the API at `VITE_API_URL`
+     (`https://demand-iq-api.onrender.com`; if Render gives your API a different URL,
+     update `VITE_API_URL` in `render.yaml` or in the dashboard's Environment settings)
 3. When prompted, paste your `GROQ_API_KEY` (only needed for the AI assistant).
 4. Open the dashboard URL. On the free tier the API sleeps after 15 min idle, so the first visit
    shows a "Waking up the server…" banner for up to ~1 minute and then loads normally.

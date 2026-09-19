@@ -5,10 +5,17 @@
 import axios from 'axios'
 
 // Dev:  VITE_API_URL is empty → Vite proxy routes all paths → local backend
-// Prod: VITE_API_URL = backend URL. Render's blueprint passes a bare host
-//       ("demand-iq-api.onrender.com"), so add https:// when it is missing.
-const rawUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '')
-export const API_BASE = rawUrl && !/^https?:\/\//.test(rawUrl) ? `https://${rawUrl}` : rawUrl
+// Prod: VITE_API_URL = public backend URL, e.g. https://demand-iq-api.onrender.com
+function resolveApiBase(value) {
+  let url = (value || '').trim().replace(/\/+$/, '')
+  if (!url) return ''
+  if (/^https?:\/\//.test(url)) return url
+  // A bare name with no dot ("demand-iq-api") is a Render private-network
+  // hostname that browsers can't resolve — map it to the public onrender.com URL
+  if (!url.includes('.') && !url.startsWith('localhost')) url = `${url}.onrender.com`
+  return `https://${url}`
+}
+export const API_BASE = resolveApiBase(import.meta.env.VITE_API_URL)
 
 const api = axios.create({
   baseURL: API_BASE,
