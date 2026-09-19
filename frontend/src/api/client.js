@@ -4,12 +4,34 @@
  */
 import axios from 'axios'
 
+// Dev:  VITE_API_URL is empty → Vite proxy routes all paths → local backend
+// Prod: VITE_API_URL = backend URL. Render's blueprint passes a bare host
+//       ("demand-iq-api.onrender.com"), so add https:// when it is missing.
+const rawUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '')
+export const API_BASE = rawUrl && !/^https?:\/\//.test(rawUrl) ? `https://${rawUrl}` : rawUrl
+
 const api = axios.create({
-  // Dev:  VITE_API_URL is empty → Vite proxy routes all paths → http://localhost:8000
-  // Prod: VITE_API_URL=https://inventory-demand-api-571038545354.us-central1.run.app (set in .env.production)
-  baseURL: import.meta.env.VITE_API_URL || '',
-  timeout: 30000,
+  baseURL: API_BASE,
+  // Free-tier hosts sleep when idle; the first request after a nap can take ~50s
+  timeout: 90000,
 })
+
+// Retry once on network errors / gateway errors — typical while a sleeping
+// free-tier instance boots. Keeps the dashboard from showing errors on first load.
+api.interceptors.response.use(null, async (error) => {
+  const cfg = error.config
+  const status = error.response?.status
+  const transient = !error.response || [502, 503, 504].includes(status)
+  if (cfg && transient && !cfg.__retried && cfg.method === 'get') {
+    cfg.__retried = true
+    await new Promise(r => setTimeout(r, 3000))
+    return api(cfg)
+  }
+  return Promise.reject(error)
+})
+
+export const getHealth = () =>
+  api.get('/health', { timeout: 90000 }).then(r => r.data)
 
 // ── AI Chat / Groq ─────────────────────────────────────────────────────────────
 export const explainWithAI = ({ context, data, question }) =>

@@ -15,6 +15,8 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from api.cache import read_parquet
+
 router = APIRouter()
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,7 +55,7 @@ def _load_anomalies() -> pd.DataFrame:
             status_code=503,
             detail="anomalies.parquet not found. Run `python -m ml.anomaly_detection` first."
         )
-    df = pd.read_parquet(ANOMALIES_PATH)
+    df = read_parquet(ANOMALIES_PATH)
     df["date"] = pd.to_datetime(df["date"]).dt.date
     return df
 
@@ -85,7 +87,8 @@ def list_anomalies(
     if end_date:
         df = df[df["date"] <= end_date]
 
-    df = df.sort_values(["product_id", "date"], ascending=[True, False]).head(limit)
+    # Most recent first across ALL products (sorting by product first made limit=5 return only Milk)
+    df = df.sort_values(["date", "product_id"], ascending=[False, True]).head(limit)
 
     results = []
     for _, row in df.iterrows():

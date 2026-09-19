@@ -8,7 +8,12 @@ Note: llama-3.1-8b-instant was retired from the Groq free tier and replaced
 here with openai/gpt-oss-20b. If Groq deprecates this one too, override it
 via the GROQ_MODEL env var in .env — no code change needed.
 
-Rate limiting via slowapi: 10 requests / minute per IP (well inside Groq limits).
+Rate limiting: in-memory sliding window, CHAT_RATE_LIMIT requests / minute per
+client IP (default 10) — protects the shared Groq key on a public demo.
+
+Grounding: when the dashboard sends no data, the prompt is enriched with a compact
+snapshot of the live system (inventory, model scores, anomaly counts) so answers
+cite real numbers instead of generic theory.
 
 Endpoint:
     POST /chat/explain
@@ -21,6 +26,8 @@ Endpoint:
 import os
 import sys
 import json
+import time
+from collections import defaultdict, deque
 from typing import Optional, Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
@@ -56,6 +63,65 @@ def _get_groq():
                 detail="groq package not installed. Run: pip install groq"
             )
     return _groq_client
+
+
+# ── Rate limiting (per client IP, sliding 60s window) ─────────────────────────
+RATE_LIMIT = int(os.getenv("CHAT_RATE_LIMIT", "10"))
+_hits: Dict[str, deque] = defaultdict(deque)
+
+
+def _client_ip(request: Request) -> str:
+    # Render / Cloud Run sit behind a proxy — the real client is first in X-Forwarded-For
+    fwd = request.headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+
+
+def _check_rate_limit(request: Request):
+    now = time.monotonic()
+    q = _hits[_client_ip(request)]
+    while q and now - q[0] > 60:
+        q.popleft()
+    if len(q) >= RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Slow down a little — max {RATE_LIMIT} AI questions per minute. Try again shortly.",
+        )
+    q.append(now)
+
+
+# ── Live system snapshot (grounds answers in real dashboard numbers) ───────────
+def _system_snapshot() -> str:
+    parts = []
+    try:
+        from database import SessionLocal
+        from api.routes.inventory import _to_out
+        from models.tables import Inventory, Product
+        with SessionLocal() as db:
+            rows = db.query(Inventory, Product.name, Product.price).join(
+                Product, Product.id == Inventory.product_id).all()
+        inv = [_to_out(*r) for r in rows]
+        parts.append("Inventory: " + "; ".join(
+            f"{i.product_name} stock={i.current_stock:.0f}, reorder_point={i.reorder_point:.0f}, "
+            f"safety_stock={i.safety_stock:.0f}, EOQ={i.reorder_quantity:.0f}, "
+            f"avg_daily_demand={i.avg_daily_demand:.1f}, status={i.status}"
+            + (f", days_until_reorder={i.days_until_reorder}" if i.days_until_reorder is not None else "")
+            for i in inv))
+    except Exception:
+        pass
+    try:
+        backend = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(backend, "ml", "models", "model_comparison.json")) as f:
+            cmp = json.load(f)
+        parts.append("Model accuracy on 14-day holdout (lower is better): " + "; ".join(
+            f"{k}: RMSE={v['overall']['rmse']:.2f}, WAPE={v['overall']['wape']:.1f}%" for k, v in cmp.items()))
+        from api.cache import read_parquet
+        an = read_parquet(os.path.join(backend, "data", "processed", "anomalies.parquet"))
+        by = an.groupby("product_name")["severity"].value_counts().unstack(fill_value=0)
+        parts.append("Anomalies flagged (Isolation Forest): " + "; ".join(
+            f"{p}: " + ", ".join(f"{int(n)} {sev}" for sev, n in r.items() if n) for p, r in by.iterrows()))
+    except Exception:
+        pass
+    return "\n".join(parts)
 
 
 # ── Model config ───────────────────────────────────────────────────────────────
@@ -211,7 +277,7 @@ class ChatResponse(BaseModel):
 # ── Route ──────────────────────────────────────────────────────────────────────
 
 @router.post("/explain", response_model=ChatResponse)
-async def explain(req: ChatRequest):
+def explain(req: ChatRequest, request: Request):
     """
     Call Groq LLM to explain inventory/forecast/anomaly/SHAP data in plain English.
 
@@ -222,10 +288,20 @@ async def explain(req: ChatRequest):
     Uses openai/gpt-oss-20b on Groq free tier.
     """
     client = _get_groq()
+    _check_rate_limit(request)
 
+    question = (req.question or "")[:1000]  # cap prompt size — keeps token usage bounded
     ctx = req.context.lower().strip()
-    builder = PROMPT_BUILDERS.get(ctx, _build_general_prompt)
-    user_message = builder(req.data or {}, req.question or "")
+    if req.data:
+        builder = PROMPT_BUILDERS.get(ctx, _build_general_prompt)
+        user_message = builder(req.data, question)
+    else:
+        # No widget data (free-form chat) — ground the answer in a live snapshot instead
+        snapshot = _system_snapshot() or "(snapshot unavailable)"
+        user_message = (
+            f"Live dashboard data (M5 dataset, Walmart CA_1 store, 5 FOODS products):\n{snapshot}\n\n"
+            f"User question (topic: {ctx}): {question or 'Give a short status summary.'}"
+        )
 
     try:
          response = client.chat.completions.create(

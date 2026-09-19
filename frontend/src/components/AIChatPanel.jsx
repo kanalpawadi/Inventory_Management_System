@@ -77,7 +77,7 @@ function Message({ msg }) {
   )
 }
 
-export default function AIChatPanel() {
+export default function AIChatPanel({ apiStatus }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -89,26 +89,28 @@ export default function AIChatPanel() {
 
   /* Check backend Groq status on first open */
   useEffect(() => {
-    if (open && configured === null) {
+    if (open && configured !== true) {
+      setConfigured(null)
       getChatStatus()
         .then(s => {
           setConfigured(s.groq_configured)
           if (!s.groq_configured) {
             push('assistant', '⚠️ Groq API key is not configured. Add GROQ_API_KEY to backend/.env to enable AI answers.')
           } else {
-            push('assistant', '👋 Hi! I\'m your AI inventory assistant powered by **Groq**.\n\nAsk me anything about your forecasts, anomalies, inventory levels, or SHAP explanations. You can also pick a quick question below.')
+            push('assistant', '👋 Hi! I\'m your AI inventory assistant, powered by Groq.\n\nI can see the live dashboard data, so ask me about stock levels, forecasts, anomalies or SHAP explanations, or pick a quick question below.')
           }
         })
         .catch(() => {
           setConfigured(false)
-          push('assistant', '⚠️ Could not reach the backend. Make sure the FastAPI server is running on port 8000.')
+          push('assistant', '⚠️ Could not reach the backend. If it was asleep it may still be starting; close and reopen this panel in a moment to retry.')
         })
     }
     if (open) {
       setUnread(0)
       setTimeout(() => inputRef.current?.focus(), 100)
     }
-  }, [open])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, apiStatus === 'online'])
 
   /* Auto-scroll to bottom on new message */
   useEffect(() => {
@@ -171,13 +173,14 @@ export default function AIChatPanel() {
         className="chat-fab"
         onClick={() => setOpen(o => !o)}
         title="Ask AI Assistant"
+        aria-label={open ? 'Close AI assistant' : 'Open AI assistant'}
         style={{
-          position: 'fixed', bottom: 28, right: 28, zIndex: 1000,
+          position: 'fixed', bottom: 24, right: 'max(16px, min(28px, 3vw))', zIndex: 1000,
           width: 56, height: 56, borderRadius: '50%', border: 'none',
-          background: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
+          background: 'linear-gradient(135deg, #14b8a6 0%, #6366f1 100%)',
           color: '#fff', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 20px rgba(6,182,212,0.45), 0 2px 8px rgba(0,0,0,0.3)',
+          boxShadow: '0 6px 22px rgba(20,184,166,0.45), 0 2px 8px rgba(15,23,42,0.25)',
           transition: 'all 0.2s cubic-bezier(0.4,0,0.2,1)',
           animation: 'fab-pop 0.35s ease',
         }}
@@ -200,8 +203,8 @@ export default function AIChatPanel() {
       {/* ── Chat Panel ────────────────────────────────────────────────────── */}
       {open && (
         <div style={{
-          position: 'fixed', bottom: 96, right: 28, zIndex: 999,
-          width: 380, height: 560, maxHeight: 'calc(100vh - 120px)',
+          position: 'fixed', bottom: 96, right: 'max(16px, min(28px, 3vw))', zIndex: 999,
+          width: 'min(380px, calc(100vw - 32px))', height: 560, maxHeight: 'calc(100dvh - 120px)',
           background: '#ffffff',
           borderRadius: 20,
           boxShadow: '0 24px 64px rgba(0,0,0,0.18), 0 0 0 1px rgba(6,182,212,0.15)',
@@ -212,7 +215,7 @@ export default function AIChatPanel() {
 
           {/* Header */}
           <div style={{
-            background: 'linear-gradient(135deg, #0a0f1e 0%, #0f172a 100%)',
+            background: 'linear-gradient(135deg, #0b1324 0%, #13204a 100%)',
             padding: '14px 18px',
             display: 'flex', alignItems: 'center', gap: 10,
             borderBottom: '1px solid rgba(6,182,212,0.2)',

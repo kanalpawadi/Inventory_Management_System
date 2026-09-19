@@ -7,6 +7,7 @@ Endpoints:
     POST /inventory/recompute — rerun inventory_logic to refresh DB values
 """
 
+import math
 import os
 import sys
 from typing import List, Optional
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from database import get_db
 from models.tables import Inventory, Product
+from services.inventory_logic import LEAD_TIME_DAYS, Z_SCORE
 
 router = APIRouter()
 
@@ -34,6 +36,12 @@ class InventoryOut(BaseModel):
     reorder_quantity: float
     last_updated: Optional[datetime] = None
     needs_reorder: bool
+    # Derived — lets the UI show urgency and drive the What-If simulator with real inputs
+    status: str                        # reorder_now | reorder_soon | healthy
+    days_until_reorder: Optional[float] = None
+    avg_daily_demand: float
+    demand_std: float
+    unit_price: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -42,6 +50,37 @@ class InventoryOut(BaseModel):
 class RecomputeResult(BaseModel):
     status: str
     products_updated: int
+
+
+def _to_out(inv: Inventory, product_name: str, price: Optional[float]) -> InventoryOut:
+    # Invert the stored formulas: ROP = mu*LT + SS,  SS = Z*sigma*sqrt(LT)
+    avg_daily = max((inv.reorder_point - inv.safety_stock) / LEAD_TIME_DAYS, 0.0)
+    sigma = inv.safety_stock / (Z_SCORE * math.sqrt(LEAD_TIME_DAYS)) if Z_SCORE else 0.0
+
+    needs_reorder = inv.current_stock <= inv.reorder_point
+    days_left = (inv.current_stock - inv.reorder_point) / avg_daily if avg_daily > 0 else None
+    if needs_reorder:
+        status = "reorder_now"
+    elif days_left is not None and days_left <= LEAD_TIME_DAYS:
+        status = "reorder_soon"
+    else:
+        status = "healthy"
+
+    return InventoryOut(
+        product_id=inv.product_id,
+        product_name=product_name,
+        current_stock=round(inv.current_stock, 2),
+        safety_stock=round(inv.safety_stock, 2),
+        reorder_point=round(inv.reorder_point, 2),
+        reorder_quantity=round(inv.reorder_quantity, 2),
+        last_updated=inv.last_updated,
+        needs_reorder=needs_reorder,
+        status=status,
+        days_until_reorder=round(max(days_left, 0.0), 1) if days_left is not None else None,
+        avg_daily_demand=round(avg_daily, 3),
+        demand_std=round(sigma, 3),
+        unit_price=price,
+    )
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -53,7 +92,7 @@ def list_inventory(db: Session = Depends(get_db)):
     for all products.
     """
     rows = (
-        db.query(Inventory, Product.name.label("product_name"))
+        db.query(Inventory, Product.name.label("product_name"), Product.price)
         .join(Product, Product.id == Inventory.product_id)
         .all()
     )
@@ -63,26 +102,14 @@ def list_inventory(db: Session = Depends(get_db)):
             detail="No inventory data found. Run `python -m services.inventory_logic` first."
         )
 
-    result = []
-    for inv, product_name in rows:
-        result.append(InventoryOut(
-            product_id=inv.product_id,
-            product_name=product_name,
-            current_stock=round(inv.current_stock, 2),
-            safety_stock=round(inv.safety_stock, 2),
-            reorder_point=round(inv.reorder_point, 2),
-            reorder_quantity=round(inv.reorder_quantity, 2),
-            last_updated=inv.last_updated,
-            needs_reorder=inv.current_stock <= inv.reorder_point,
-        ))
-    return result
+    return [_to_out(inv, name, price) for inv, name, price in rows]
 
 
 @router.get("/{product_id}", response_model=InventoryOut)
 def get_inventory(product_id: int, db: Session = Depends(get_db)):
     """Return inventory metrics for a single product."""
     row = (
-        db.query(Inventory, Product.name.label("product_name"))
+        db.query(Inventory, Product.name.label("product_name"), Product.price)
         .join(Product, Product.id == Inventory.product_id)
         .filter(Inventory.product_id == product_id)
         .first()
@@ -90,17 +117,7 @@ def get_inventory(product_id: int, db: Session = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail=f"No inventory record for product_id={product_id}")
 
-    inv, product_name = row
-    return InventoryOut(
-        product_id=inv.product_id,
-        product_name=product_name,
-        current_stock=round(inv.current_stock, 2),
-        safety_stock=round(inv.safety_stock, 2),
-        reorder_point=round(inv.reorder_point, 2),
-        reorder_quantity=round(inv.reorder_quantity, 2),
-        last_updated=inv.last_updated,
-        needs_reorder=inv.current_stock <= inv.reorder_point,
-    )
+    return _to_out(*row)
 
 
 @router.post("/recompute", response_model=RecomputeResult)
@@ -111,12 +128,10 @@ def recompute_inventory():
     """
     try:
         from services.inventory_logic import main as inventory_main
-        inventory_main()
-        # Count how many products were updated
         from database import SessionLocal
-        db = SessionLocal()
-        count = db.query(Inventory).count()
-        db.close()
+        inventory_main()
+        with SessionLocal() as db:
+            count = db.query(Inventory).count()
         return RecomputeResult(status="success", products_updated=count)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Recompute failed: {str(exc)}")

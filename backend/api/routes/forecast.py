@@ -16,6 +16,8 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from api.cache import read_parquet
+
 router = APIRouter()
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -42,7 +44,7 @@ def _load_predictions(model: str) -> pd.DataFrame:
         raise HTTPException(status_code=400, detail=f"Unknown model '{model}'. Choose from: {list(_PREDICTION_FILES)}")
     if not os.path.exists(path):
         raise HTTPException(status_code=503, detail=f"Predictions for '{model}' not found. Run the ML pipeline first.")
-    df = pd.read_parquet(path)
+    df = read_parquet(path)
     # Ensemble parquet uses pred_ensemble column instead of predicted
     if "pred_ensemble" in df.columns and "predicted" not in df.columns:
         df = df.rename(columns={"pred_ensemble": "predicted"})
@@ -55,7 +57,7 @@ def _get_all_products() -> List[dict]:
     for model_key in ("xgboost", "ensemble", "lstm", "prophet"):
         path = _PREDICTION_FILES[model_key]
         if os.path.exists(path):
-            df = pd.read_parquet(path)[["product_id", "product_name"]].drop_duplicates()
+            df = read_parquet(path)[["product_id", "product_name"]].drop_duplicates()
             return df.sort_values("product_id").to_dict(orient="records")
     return []
 

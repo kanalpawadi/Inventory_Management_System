@@ -12,7 +12,7 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import Base, engine
@@ -34,17 +34,13 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ── CORS — allow the React dev server and the production frontend ──────────────
+# ── CORS — comma-separated CORS_ORIGINS env var, default "*" (public read-only demo) ─
+_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",           # Vite dev server
-        "http://localhost:3000",           # Alt dev server
-        "https://inventory-demand-api-571038545354.us-central1.run.app",  # Cloud Run backend (self)
-        "*",                               # Allow all (permissive; restrict in production if needed)
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=_origins,
+    allow_credentials=False,   # the frontend never sends cookies; "*" + credentials is invalid per spec
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -65,3 +61,9 @@ def root():
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "healthy"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+

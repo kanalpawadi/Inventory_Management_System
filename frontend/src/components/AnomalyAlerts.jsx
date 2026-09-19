@@ -29,9 +29,10 @@ export default function AnomalyAlerts({ limit = 200, compact = false }) {
   if (error) return <div className="error-box">Error: {error}</div>
   if (!data?.length) return <div className="empty-state"><div className="empty-state-icon">✅</div>No anomalies detected.</div>
 
-  const sorted = [...data].sort((a, b) =>
-    (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3) ||
-    new Date(b.date) - new Date(a.date)
+  // Compact card = most recent first; full table = most severe first
+  const sorted = [...data].sort((a, b) => compact
+    ? new Date(b.date) - new Date(a.date)
+    : (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3) || new Date(b.date) - new Date(a.date)
   )
 
   if (compact) {
@@ -41,21 +42,21 @@ export default function AnomalyAlerts({ limit = 200, compact = false }) {
         {sorted.slice(0, limit).map((a, i) => (
           <div key={i} style={{
             display: 'flex', alignItems: 'center', gap: 10,
-            padding: '8px 12px', borderRadius: 8,
-            background: 'var(--bg-card)',
+            padding: '10px 12px', borderRadius: 10,
+            background: 'var(--bg-subtle)',
             border: '1px solid var(--border)',
           }}>
-            <span className={`badge badge-${a.severity}`}>{a.severity}</span>
-            <span style={{ fontWeight: 600, fontSize: 12.5 }}>{a.product_name}</span>
+            <span className={`badge badge-${a.severity}`} style={{ minWidth: 62, justifyContent: 'center' }}>{a.severity}</span>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{a.product_name}</span>
             <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
               {format(parseISO(String(a.date)), 'MMM d, yyyy')}
             </span>
             <span style={{ marginLeft: 'auto' }}>
               {a.reason === 'demand_spike'
-                ? <TrendingUp size={14} color="var(--accent-orange)" />
-                : <TrendingDown size={14} color="var(--accent-cyan)" />}
+                ? <TrendingUp size={15} color="var(--amber-600)" />
+                : <TrendingDown size={15} color="var(--indigo-600)" />}
             </span>
-            <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, minWidth: 58, textAlign: 'right', color: a.deviation_pct > 0 ? 'var(--amber-700)' : 'var(--indigo-700)', fontFamily: 'JetBrains Mono' }}>
               {a.deviation_pct > 0 ? '+' : ''}{a.deviation_pct}%
             </span>
           </div>
@@ -72,15 +73,15 @@ export default function AnomalyAlerts({ limit = 200, compact = false }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
           {summary.map(p => (
             <div key={p.product_id} style={{
-              background: 'var(--bg-surface)', borderRadius: 8,
-              border: '1px solid var(--border)', padding: '6px 12px',
-              fontSize: 12,
+              background: 'var(--bg-subtle)', borderRadius: 99,
+              border: '1px solid var(--border)', padding: '5px 14px',
+              fontSize: 12.5,
             }}>
               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{p.product_name}</span>
               <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
                 {p.high > 0 && <span style={{ color: 'var(--accent-rose)' }}>{p.high}H </span>}
                 {p.medium > 0 && <span style={{ color: 'var(--accent-amber)' }}>{p.medium}M </span>}
-                {p.low > 0 && <span style={{ color: 'var(--accent-emerald)' }}>{p.low}L</span>}
+                {p.low > 0 && <span style={{ color: 'var(--text-muted)' }}>{p.low}L</span>}
               </span>
             </div>
           ))}
@@ -88,9 +89,10 @@ export default function AnomalyAlerts({ limit = 200, compact = false }) {
       )}
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <select
           id="anomaly-severity-filter"
+          aria-label="Severity"
           className="select"
           value={filterSeverity}
           onChange={e => setFilterSeverity(e.target.value)}
@@ -144,7 +146,7 @@ export default function AnomalyAlerts({ limit = 200, compact = false }) {
                 <td className="td-mono">{a.actual_value.toFixed(1)}</td>
                 <td className="td-mono">{a.expected_value.toFixed(1)}</td>
                 <td className="td-mono" style={{
-                  color: a.deviation_pct > 0 ? 'var(--amber-text)' : 'var(--teal-text)',
+                  color: a.deviation_pct > 0 ? 'var(--amber-700)' : 'var(--indigo-700)',
                   fontWeight: 600,
                 }}>
                   {a.deviation_pct > 0 ? '+' : ''}{a.deviation_pct}%

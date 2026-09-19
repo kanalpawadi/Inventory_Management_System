@@ -8,12 +8,13 @@ import {
   CartesianGrid, Tooltip, Legend, Cell
 } from 'recharts'
 import { useModelComparison, useEnsembleWeights } from '../hooks/useData'
+import { MODEL_COLORS } from './ForecastChart.jsx'
 
 const MODEL_DISPLAY = {
-  xgboost: { label: 'XGBoost', color: '#f38304ff' },  // amber-600
-  prophet: { label: 'Prophet', color: '#6310f2ff' },  // violet-600
-  lstm: { label: 'LSTM', color: '#3a010dff' },  // rose-600
-  stacked_ensemble: { label: 'Ensemble', color: '#012825ff' },  // teal-600
+  xgboost: { label: 'XGBoost', color: MODEL_COLORS.xgboost },
+  prophet: { label: 'Prophet', color: MODEL_COLORS.prophet },
+  lstm: { label: 'LSTM', color: MODEL_COLORS.lstm },
+  stacked_ensemble: { label: 'Ensemble', color: MODEL_COLORS.ensemble },
 }
 
 const METRIC_OPTIONS = [
@@ -26,18 +27,12 @@ const METRIC_OPTIONS = [
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   return (
-    <div style={{
-      background: 'var(--bg-elevated)', border: '1px solid var(--border-bright)',
-      borderRadius: 8, padding: '10px 14px', fontSize: 12.5,
-      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-    }}>
-      <p style={{ color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 6 }}>{label}</p>
+    <div className="chart-tooltip">
+      <div className="tt-label">{label}</div>
       {payload.map(p => (
-        <div key={p.dataKey} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 3 }}>
-          <span style={{ color: p.fill }}>{p.name}</span>
-          <span style={{ fontFamily: 'JetBrains Mono', fontWeight: 700, color: 'var(--text-primary)' }}>
-            {p.value?.toFixed(3)}
-          </span>
+        <div key={p.dataKey} className="tt-row">
+          <span style={{ color: '#cbd5e1' }}>{p.name}</span>
+          <span className="tt-value">{p.value?.toFixed(3)}</span>
         </div>
       ))}
     </div>
@@ -66,6 +61,7 @@ export default function ModelComparisonPanel({ compact = false }) {
   }))
 
   const best = chartData.reduce((a, b) => a.value < b.value ? a : b)
+  const metricLabel = METRIC_OPTIONS.find(m => m.key === metric)?.label ?? ''
 
   return (
     <div>
@@ -90,16 +86,16 @@ export default function ModelComparisonPanel({ compact = false }) {
       {/* Bar chart */}
       <ResponsiveContainer width="100%" height={compact ? 140 : 220}>
         <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#edf0f5" vertical={false} />
           <XAxis dataKey="model" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} width={36} />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(14,165,233,0.05)' }} />
-          <Bar dataKey="value" name={METRIC_OPTIONS.find(m => m.key === metric)?.label} radius={[6, 6, 0, 0]}>
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(15,23,42,0.04)' }} />
+          <Bar dataKey="value" name={METRIC_OPTIONS.find(m => m.key === metric)?.label} radius={[8, 8, 0, 0]} maxBarSize={64}>
             {chartData.map((entry, i) => (
               <Cell
                 key={i}
                 fill={entry.color}
-                opacity={entry.model === best.model ? 1 : 0.55}
+                fillOpacity={entry.model === best.model ? 1 : 0.45}
               />
             ))}
           </Bar>
@@ -123,23 +119,21 @@ export default function ModelComparisonPanel({ compact = false }) {
             {Object.entries(MODEL_DISPLAY).map(([key, meta]) => {
               const o = comparison[key]?.overall
               if (!o) return null
-              const isBest = key === Object.entries(MODEL_DISPLAY).reduce((bestKey, [k]) => {
-                const a = comparison[bestKey]?.overall?.rmse ?? Infinity
-                const b = comparison[k]?.overall?.rmse ?? Infinity
-                return b < a ? k : bestKey
-              }, 'xgboost')
+              const isBest = meta.label === best.model
               return (
                 <tr key={key}>
-                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600 }}>{meta.label}</span>
+                  <td>
+                    <div className="product-cell">
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: meta.color, flexShrink: 0 }} />
+                      {meta.label}
+                    </div>
                   </td>
                   <td className="td-mono">{o.rmse?.toFixed(3)}</td>
                   <td className="td-mono">{o.mae?.toFixed(3)}</td>
                   <td className="td-mono">{o.mape?.toFixed(1)}%</td>
                   <td className="td-mono">{o.wape?.toFixed(1)}%</td>
                   <td>
-                    {isBest ? <span className="badge badge-low">🏆 Best</span> : '–'}
+                    {isBest ? <span className="badge badge-best">🏆 Best {metricLabel.split(' ')[0]}</span> : <span style={{ color: 'var(--text-muted)' }}>–</span>}
                   </td>
                 </tr>
               )
@@ -150,29 +144,21 @@ export default function ModelComparisonPanel({ compact = false }) {
 
       {/* Blend weights */}
       {weights && !compact && (
-        <div style={{
-          marginTop: 16, padding: '12px 16px',
-          background: 'var(--bg-surface)', borderRadius: 8,
-          border: '1px solid var(--border)',
-        }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
-            Learned Stacking Weights (non-negative linear blend)
+        <div className="note">
+          <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>
+            Learned stacking weights (non-negative linear blend)
           </div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            {Object.entries(weights.weights || {}).map(([model, w]) => (
-              <div key={model} style={{ fontSize: 12.5 }}>
-                <span style={{ color: 'var(--text-secondary)' }}>{model}: </span>
-                <span style={{ fontFamily: 'JetBrains Mono', fontWeight: 700, color: 'var(--teal-text)' }}>
-                  {w.toFixed(4)}
-                </span>
+          {Object.entries(weights.weights || {}).map(([model, w]) => (
+            <div key={model} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <span style={{ width: 70, fontWeight: 600 }}>{MODEL_DISPLAY[model]?.label ?? model}</span>
+              <div className="progress-track" style={{ flex: 1, background: '#fff', border: '1px solid var(--border)' }}>
+                <div className="progress-fill" style={{ width: `${Math.max(w, 0) * 100}%`, background: MODEL_DISPLAY[model]?.color }} />
               </div>
-            ))}
-            <div style={{ fontSize: 12.5 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>intercept: </span>
-              <span style={{ fontFamily: 'JetBrains Mono', fontWeight: 700, color: 'var(--text-muted)' }}>
-                {weights.intercept?.toFixed(4)}
-              </span>
+              <span className="td-mono" style={{ width: 52, textAlign: 'right', fontWeight: 700 }}>{w.toFixed(3)}</span>
             </div>
+          ))}
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>
+            intercept = {weights.intercept?.toFixed(3)} · a zero weight means that model added no extra signal once the others were known.
           </div>
         </div>
       )}

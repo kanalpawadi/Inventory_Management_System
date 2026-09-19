@@ -10,7 +10,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./demand_forecast.db")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_DB = "sqlite:///" + os.path.join(BACKEND_DIR, "demand_forecast.db").replace("\\", "/")
+
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DB)
+# A relative SQLite path ("./x.db") depends on the launch directory — pin it to backend/
+if DATABASE_URL.startswith("sqlite:///./"):
+    DATABASE_URL = "sqlite:///" + os.path.join(BACKEND_DIR, DATABASE_URL[len("sqlite:///./"):]).replace("\\", "/")
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 

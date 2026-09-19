@@ -1,20 +1,23 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// Dev proxy target — override with API_PROXY=http://localhost:8010 if 8000 is taken
+const API = process.env.API_PROXY || 'http://localhost:8000'
+
 export default defineConfig({
   plugins: [react()],
 
   server: {
     port: 5173,
     // DEV-ONLY proxy: routes API paths to the local backend.
-    // In production, VITE_API_URL in .env.production points directly to
-    // https://inventory-demand-api-571038545354.us-central1.run.app
+    // In production, VITE_API_URL (Render env var / .env.production) points to the API.
     proxy: {
-      '/forecast':  'http://localhost:8000',
-      '/inventory': 'http://localhost:8000',
-      '/anomalies': 'http://localhost:8000',
-      '/explain':   'http://localhost:8000',
-      '/chat':      'http://localhost:8000',
+      '/forecast':  API,
+      '/inventory': API,
+      '/anomalies': API,
+      '/explain':   API,
+      '/chat':      API,
+      '/health':    API,
     }
   },
 

@@ -1,0 +1,16 @@
+# Keep the image to runtime essentials only
+venv/
+**/__pycache__/
+*.pyc
+.env
+lstm_log.txt
+tests/
+test_supabase_connection.py
+data/raw/
+data_prep/
+# Trained model weights are only needed to retrain — the API serves their
+# precomputed predictions from data/processed/*.parquet
+ml/models/*.keras
+ml/models/prophet_*.json
+ml/models/xgboost_*.json
+ml/models/lstm_scaler_*.json

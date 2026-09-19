@@ -1,16 +1,14 @@
+# ── Runtime dependencies (what the deployed API actually imports) ─────────────
+# The API only serves precomputed predictions (parquet/json), the SQLite DB and
+# the Groq chat proxy — no model is trained or loaded at request time.
+# Training deps (TensorFlow, Prophet, XGBoost, SHAP, scikit-learn) live in
+# requirements-train.txt, which keeps the deploy image ~10x smaller.
+fastapi>=0.110
+uvicorn>=0.29
 sqlalchemy>=2.0
 psycopg2-binary>=2.9
 pandas>=2.0
 numpy>=1.24
-fastapi>=0.110
-uvicorn>=0.29
-python-dotenv>=1.0
-xgboost>=2.0
-scikit-learn>=1.3
 pyarrow>=14.0
-prophet>=1.1
-tensorflow-cpu>=2.15
-shap>=0.44
-scipy>=1.11
+python-dotenv>=1.0
 groq>=0.9.0
-slowapi>=0.1.9

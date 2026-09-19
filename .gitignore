@@ -1,9 +1,10 @@
-﻿backend/venv/
+backend/venv/
 backend/__pycache__/
 **/__pycache__/
 *.pyc
 backend/.env
-backend/demand_forecast.db
+# demand_forecast.db IS committed (~0.8MB): it is the prototype's data store and
+# the deploy has no other way to get it.
 backend/lstm_log.txt
 frontend/node_modules/
 frontend/dist/
@@ -12,3 +13,7 @@ Thumbs.db
 
 backend/data/raw/sell_prices.csv
 backend/data/raw/sales_train_evaluation.csv
+
+# Local tooling / backups
+*.backup
+*.backup.db

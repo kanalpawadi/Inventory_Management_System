@@ -4,30 +4,24 @@
  */
 import { useState, useMemo } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine } from 'recharts'
-import { useExplainDates, useExplanation, useGlobalImportance } from '../hooks/useData'
+import { useExplainDates, useExplanation, useGlobalImportance, useProducts } from '../hooks/useData'
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   const item = payload[0]
   return (
-    <div style={{
-      background: 'var(--bg-elevated)', border: '1px solid var(--border-bright)',
-      borderRadius: 8, padding: '10px 14px', fontSize: 12,
-      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-    }}>
-      <p style={{ color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 6 }}>{label}</p>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
-        <span style={{ color: 'var(--text-secondary)' }}>SHAP contribution</span>
-        <span style={{ fontFamily: 'JetBrains Mono', fontWeight: 700, color: item.value >= 0 ? '#0d9488' : '#be123c' }}>
+    <div className="chart-tooltip">
+      <div className="tt-label">{label}</div>
+      <div className="tt-row">
+        <span style={{ color: '#cbd5e1' }}>SHAP contribution</span>
+        <span className="tt-value" style={{ color: item.value >= 0 ? '#5eead4' : '#fda4af' }}>
           {item.value >= 0 ? '+' : ''}{item.value?.toFixed(4)}
         </span>
       </div>
-      {payload[0]?.payload?.feature_value != null && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginTop: 4 }}>
-          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Feature value</span>
-          <span style={{ fontFamily: 'JetBrains Mono', fontSize: 11, color: 'var(--text-muted)' }}>
-            {payload[0].payload.feature_value}
-          </span>
+      {item.payload?.feature_value != null && (
+        <div className="tt-row">
+          <span style={{ color: '#94a3b8', fontSize: 11 }}>Feature value</span>
+          <span className="tt-value" style={{ fontSize: 11, fontWeight: 500 }}>{item.payload.feature_value}</span>
         </div>
       )}
     </div>
@@ -40,10 +34,6 @@ export default function ExplainPanel() {
   const [view, setView] = useState('waterfall') // 'waterfall' | 'global'
 
   const { data: dates } = useExplainDates(productId)
-  const { data: explanation, loading, error } = useExplanation(
-    productId,
-    selectedDate
-  )
   const { data: globalImportance } = useGlobalImportance()
 
   // Auto-select first available date when product changes
@@ -51,7 +41,8 @@ export default function ExplainPanel() {
     return dates?.map(d => String(d.date)).sort() ?? []
   }, [dates])
 
-  const dateToShow = selectedDate || availableDates[0] || ''
+  // Default to the most recent explained date
+  const dateToShow = selectedDate || availableDates[availableDates.length - 1] || ''
   const { data: explainData, loading: explainLoading, error: explainError } =
     useExplanation(productId, dateToShow)
 
@@ -73,10 +64,8 @@ export default function ExplainPanel() {
     }))
   }, [globalImportance])
 
-  const PRODUCTS = [
-    { id: 1, name: 'Milk' }, { id: 2, name: 'Yogurt' },
-    { id: 3, name: 'Cheese' }, { id: 4, name: 'Eggs' }, { id: 5, name: 'Bread' },
-  ]
+  const { data: products } = useProducts()
+  const PRODUCTS = products?.map(p => ({ id: p.product_id, name: p.product_name })) ?? []
 
   return (
     <div>
@@ -117,7 +106,7 @@ export default function ExplainPanel() {
               value={selectedDate || dateToShow}
               onChange={e => setSelectedDate(e.target.value)}
             >
-              {availableDates.map(d => (
+              {[...availableDates].reverse().map(d => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
@@ -131,18 +120,13 @@ export default function ExplainPanel() {
           display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap',
         }}>
           {[
-            { label: 'Base Value', value: explainData.base_value?.toFixed(2), color: 'var(--text-secondary)' },
-            { label: 'SHAP Sum', value: (explainData.predicted_value - explainData.base_value)?.toFixed(2), color: 'var(--accent-blue)' },
-            { label: 'Predicted Demand', value: explainData.predicted_value?.toFixed(2), color: 'var(--accent-emerald)' },
+            { label: 'Base value (avg prediction)', value: explainData.base_value?.toFixed(2), c: '#94a3b8' },
+            { label: 'SHAP sum (this day)', value: `${explainData.predicted_value - explainData.base_value >= 0 ? '+' : ''}${(explainData.predicted_value - explainData.base_value)?.toFixed(2)}`, c: 'var(--violet-600)' },
+            { label: 'Predicted demand', value: explainData.predicted_value?.toFixed(2), c: 'var(--teal-600)' },
           ].map(item => (
-            <div key={item.label} style={{
-              background: 'rgba(99,132,255,0.06)', borderRadius: 8,
-              border: '1px solid var(--border)', padding: '10px 16px', minWidth: 130,
-            }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{item.label}</div>
-              <div style={{ fontFamily: 'JetBrains Mono', fontWeight: 700, fontSize: 20, color: item.color }}>
-                {item.value}
-              </div>
+            <div key={item.label} className="sim-kpi" style={{ '--c': item.c, minWidth: 170, flex: 1 }}>
+              <div className="sim-kpi-label">{item.label}</div>
+              <div className="sim-kpi-value">{item.value}</div>
             </div>
           ))}
         </div>
@@ -155,13 +139,13 @@ export default function ExplainPanel() {
           : explainError
             ? <div className="error-box">Error: {explainError}</div>
             : (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={360}>
                 <BarChart
                   data={chartData}
                   layout="vertical"
                   margin={{ top: 0, right: 60, left: 120, bottom: 0 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#edf0f5" horizontal={false} />
                   <XAxis
                     type="number"
                     tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
@@ -170,16 +154,15 @@ export default function ExplainPanel() {
                   <YAxis
                     type="category" dataKey="feature"
                     tick={{ fill: 'var(--text-secondary)', fontSize: 11 }}
-                    axisLine={false} tickLine={false} width={115}
+                    axisLine={false} tickLine={false} width={115} interval={0}
                   />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(99,132,255,0.06)' }} />
-                  <ReferenceLine x={0} stroke="rgba(255,255,255,0.15)" />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(15,23,42,0.04)' }} />
+                  <ReferenceLine x={0} stroke="#94a3b8" />
                   <Bar dataKey="shap_value" radius={[0, 4, 4, 0]}>
                     {chartData.map((entry, i) => (
                       <Cell
                         key={i}
                         fill={entry.shap_value >= 0 ? '#0d9488' : '#e11d48'}
-                        fillOpacity={0.8}
                       />
                     ))}
                   </Bar>
@@ -190,13 +173,13 @@ export default function ExplainPanel() {
 
       {/* Global importance */}
       {view === 'global' && (
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={360}>
           <BarChart
             data={globalChartData}
             layout="vertical"
             margin={{ top: 0, right: 40, left: 120, bottom: 0 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#edf0f5" horizontal={false} />
             <XAxis
               type="number"
               tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
@@ -205,38 +188,33 @@ export default function ExplainPanel() {
             <YAxis
               type="category" dataKey="feature"
               tick={{ fill: 'var(--text-secondary)', fontSize: 11 }}
-              axisLine={false} tickLine={false} width={115}
+              axisLine={false} tickLine={false} width={115} interval={0}
             />
             <Tooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null
                 return (
-                  <div style={{
-                    background: 'var(--bg-elevated)', border: '1px solid var(--border-bright)',
-                    borderRadius: 8, padding: '10px 14px', fontSize: 12,
-                  }}>
-                    <p style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>{label}</p>
-                    <span style={{ fontFamily: 'JetBrains Mono', fontWeight: 700, color: 'var(--accent-purple)' }}>
-                      {payload[0]?.value?.toFixed(4)}
-                    </span>
+                  <div className="chart-tooltip">
+                    <div className="tt-label">{label}</div>
+                    <div className="tt-row">
+                      <span style={{ color: '#cbd5e1' }}>mean |SHAP|</span>
+                      <span className="tt-value">{payload[0]?.value?.toFixed(4)}</span>
+                    </div>
                   </div>
                 )
               }}
-              cursor={{ fill: 'rgba(99,132,255,0.06)' }}
+              cursor={{ fill: 'rgba(15,23,42,0.04)' }}
             />
-            <Bar dataKey="mean_abs_shap" fill="#7c3aed" fillOpacity={0.75} radius={[0, 4, 4, 0]} />
+            <Bar dataKey="mean_abs_shap" fill="#7c3aed" radius={[0, 6, 6, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )}
 
-      <div style={{
-        marginTop: 16, padding: '8px 14px',
-        background: 'rgba(99,132,255,0.06)', borderRadius: 8,
-        border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-secondary)',
-      }}>
-        <strong style={{ color: 'var(--text-primary)' }}>Note:</strong> SHAP values explain the XGBoost point-forecast model using
-        a black-box permutation explainer (immune to XGBoost 2.x internals issues).
-        Blue = pushes prediction <em>up</em>, Red = pushes prediction <em>down</em>.
+      <div className="note">
+        <strong>How to read this:</strong> each bar shows how much a feature moved this day's XGBoost prediction away from
+        the average (base value). <span style={{ color: 'var(--teal-700)', fontWeight: 700 }}>Teal pushes demand up</span>,{' '}
+        <span style={{ color: 'var(--rose-700)', fontWeight: 700 }}>red pushes it down</span>. Base value + all bars = predicted demand.
+        Computed with a model-agnostic permutation explainer.
       </div>
     </div>
   )

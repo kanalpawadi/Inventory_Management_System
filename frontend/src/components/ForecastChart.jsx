@@ -10,30 +10,32 @@ import {
 import { useForecasts } from '../hooks/useData'
 import { format, parseISO } from 'date-fns'
 
-const MODEL_COLORS = {
-  ensemble: '#0d9488',   // teal-600    — primary / positive
-  xgboost: '#d92906ff',   // amber-600   — secondary
-  prophet: '#000000ff',   // violet-600  — tertiary
-  lstm: '#e11d48',   // rose-600    — quaternary
+export const MODEL_COLORS = {
+  ensemble: '#0d9488',   // teal-600   — brand / final model
+  xgboost: '#4f46e5',    // indigo-600
+  prophet: '#d97706',    // amber-600
+  lstm: '#db2777',       // pink-600
 }
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
+  const rows = payload.filter(p => p.dataKey !== 'band')
+  const band = payload.find(p => p.dataKey === 'band')?.value
   return (
-    <div className="custom-tooltip" style={{
-      background: 'var(--bg-elevated)', border: '1px solid var(--border-bright)',
-      borderRadius: 8, padding: '10px 14px', fontSize: 12.5,
-      boxShadow: '0 8px 24px rgba(0,0,0,0.4)'
-    }}>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: 6, fontWeight: 600 }}>{label}</p>
-      {payload.map(p => (
-        <div key={p.dataKey} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 3 }}>
-          <span style={{ color: p.color || 'var(--text-secondary)' }}>{p.name}</span>
-          <span style={{ fontFamily: 'JetBrains Mono', fontWeight: 600, color: 'var(--text-primary)' }}>
-            {typeof p.value === 'number' ? p.value.toFixed(2) : '–'}
-          </span>
+    <div className="chart-tooltip">
+      <div className="tt-label">{label}</div>
+      {rows.map(p => (
+        <div key={p.dataKey} className="tt-row">
+          <span style={{ color: p.dataKey === 'actual' ? '#cbd5e1' : '#5eead4' }}>{p.name}</span>
+          <span className="tt-value">{typeof p.value === 'number' ? p.value.toFixed(2) : '–'}</span>
         </div>
       ))}
+      {Array.isArray(band) && band[0] != null && (
+        <div className="tt-row" style={{ marginTop: 4, fontSize: 11 }}>
+          <span style={{ color: '#94a3b8' }}>Interval</span>
+          <span className="tt-value" style={{ fontWeight: 500 }}>{band[0].toFixed(1)} – {band[1].toFixed(1)}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -83,7 +85,7 @@ export default function ForecastChart({ model = 'ensemble', productId = null, mi
       }))
   }, [data, productId])
 
-  const modelColor = MODEL_COLORS[model] || '#6384ff'
+  const modelColor = MODEL_COLORS[model] || MODEL_COLORS.ensemble
   const height = mini ? 200 : 320
 
   if (loading) return (
@@ -100,24 +102,24 @@ export default function ForecastChart({ model = 'ensemble', productId = null, mi
       <ComposedChart data={chartData} margin={{ top: 6, right: 16, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={modelColor} stopOpacity={0.15} />
-            <stop offset="100%" stopColor={modelColor} stopOpacity={0.02} />
+            <stop offset="0%" stopColor={modelColor} stopOpacity={0.22} />
+            <stop offset="100%" stopColor={modelColor} stopOpacity={0.06} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#edf0f5" vertical={false} />
         <XAxis
           dataKey="date"
-          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+          tick={{ fill: '#8a96a8', fontSize: 11 }}
           axisLine={false} tickLine={false}
           interval={mini ? 4 : 2}
         />
         <YAxis
-          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+          tick={{ fill: '#8a96a8', fontSize: 11 }}
           axisLine={false} tickLine={false}
           width={36}
         />
-        <Tooltip content={<CustomTooltip />} />
-        {!mini && <Legend wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)' }} />}
+        <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#cbd5e1', strokeDasharray: '4 4' }} />
+        {!mini && <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, color: 'var(--text-secondary)', paddingTop: 8 }} />}
 
         {/* Confidence band */}
         <Area
@@ -125,17 +127,17 @@ export default function ForecastChart({ model = 'ensemble', productId = null, mi
           dataKey="band"
           stroke="none"
           fill="url(#bandGrad)"
-          name="Confidence Band"
-          legendType="none"
+          name="Prediction interval"
+          legendType="square"
         />
         {/* Actual */}
         <Line
           type="monotone"
           dataKey="actual"
-          stroke="rgba(26, 87, 228, 0.2)"
-          strokeWidth={1.5}
-          dot={false}
-          name="Actual"
+          stroke="#64748b"
+          strokeWidth={1.75}
+          dot={mini ? false : { r: 2.5, fill: '#64748b', strokeWidth: 0 }}
+          name="Actual sales"
           strokeDasharray="4 3"
         />
         {/* Predicted */}
@@ -146,7 +148,7 @@ export default function ForecastChart({ model = 'ensemble', productId = null, mi
           strokeWidth={2.5}
           dot={false}
           name={`Predicted (${model})`}
-          activeDot={{ r: 5, fill: modelColor, stroke: 'var(--bg-base)', strokeWidth: 2 }}
+          activeDot={{ r: 5, fill: modelColor, stroke: '#fff', strokeWidth: 2 }}
         />
       </ComposedChart>
     </ResponsiveContainer>

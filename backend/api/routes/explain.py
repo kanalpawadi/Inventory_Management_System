@@ -17,6 +17,8 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from api.cache import read_parquet
+
 router = APIRouter()
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -62,7 +64,7 @@ def _load_shap() -> pd.DataFrame:
             status_code=503,
             detail="shap_explanations.parquet not found. Run `python -m ml.explainability` first."
         )
-    df = pd.read_parquet(EXPLANATIONS_PATH)
+    df = read_parquet(EXPLANATIONS_PATH)
     df["date"] = pd.to_datetime(df["date"]).dt.date
     return df
 

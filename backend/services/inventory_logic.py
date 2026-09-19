@@ -22,9 +22,12 @@ data, so these are reasonable stand-in defaults):
     - service_level  = 0.95       (95% chance of not stocking out during lead time)
     - ordering_cost  = $50/order  (fixed cost per purchase order)
     - holding_cost_rate = 0.20    (20% of unit price per year, a common retail rule of thumb)
-    - current_stock is SIMULATED as reorder_point (i.e. each product starts
-      exactly at its trigger point) since M5 has no real stock-on-hand data.
-      In a production system this would come from a live inventory feed.
+    - current_stock is SIMULATED: M5 has no stock-on-hand data, so we replay
+      the full actual daily sales history through a standard (s, Q)
+      policy (start at ROP + EOQ, order EOQ whenever stock hits ROP, receive
+      after lead time). The end-of-window stock is the "current" stock, so some
+      products sit comfortably above ROP and others need a reorder — exactly
+      as a live inventory feed would look.
 
 Run:
     cd backend
@@ -34,9 +37,10 @@ Run:
 import os
 import sys
 
+from statistics import NormalDist
+
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import SessionLocal
@@ -48,7 +52,7 @@ SERVICE_LEVEL = 0.95
 ORDERING_COST = 50.0
 HOLDING_COST_RATE = 0.20  # 20% of unit price per year
 
-Z_SCORE = norm.ppf(SERVICE_LEVEL)
+Z_SCORE = NormalDist().inv_cdf(SERVICE_LEVEL)  # stdlib — avoids a ~100MB scipy dependency
 
 
 def load_recent_sales() -> pd.DataFrame:
@@ -87,7 +91,8 @@ def compute_inventory_metrics(product_df: pd.DataFrame, price: float) -> dict:
     eoq = np.sqrt((2 * annual_demand * ORDERING_COST) / holding_cost_per_unit) if annual_demand > 0 else 0.0
 
     # current_stock is simulated -- see module docstring for why
-    current_stock = reorder_point
+    full_history = product_df.sort_values("date")["quantity_sold"].tolist()
+    current_stock = simulate_current_stock(full_history, reorder_point, eoq)
 
     return {
         "current_stock": float(current_stock),
@@ -95,6 +100,20 @@ def compute_inventory_metrics(product_df: pd.DataFrame, price: float) -> dict:
         "reorder_point": float(reorder_point),
         "reorder_quantity": float(eoq),
     }
+
+
+def simulate_current_stock(daily_sales: list, reorder_point: float, eoq: float) -> float:
+    """Replay real daily sales through an (s, Q) reorder policy; return ending stock."""
+    stock = reorder_point + eoq
+    pipeline = []  # days remaining until each open order arrives
+    for sold in daily_sales:
+        pipeline = [d - 1 for d in pipeline]
+        stock += eoq * sum(1 for d in pipeline if d <= 0)
+        pipeline = [d for d in pipeline if d > 0]
+        stock = max(stock - sold, 0.0)
+        if stock <= reorder_point and not pipeline:
+            pipeline.append(LEAD_TIME_DAYS)
+    return stock
 
 
 def write_to_db(product_id: int, metrics: dict):
@@ -114,7 +133,7 @@ def write_to_db(product_id: int, metrics: dict):
 
 
 def main():
-    print("Loading recent sales history from Supabase ...")
+    print("Loading sales history from the database ...")
     df = load_recent_sales()
 
     print(f"\n{'Product':<10}{'AvgDaily':>10}{'SafetyStk':>12}{'ReorderPt':>12}{'EOQ':>10}")
@@ -132,7 +151,7 @@ def main():
 
     print(f"\nAssumptions used: lead_time={LEAD_TIME_DAYS}d, service_level={SERVICE_LEVEL}, "
           f"ordering_cost=${ORDERING_COST}, holding_cost_rate={HOLDING_COST_RATE}")
-    print("Wrote inventory recommendations to Supabase `inventory` table.")
+    print("Wrote inventory recommendations to the `inventory` table.")
 
 
 if __name__ == "__main__":

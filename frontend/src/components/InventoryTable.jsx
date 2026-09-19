@@ -1,23 +1,33 @@
 /**
  * InventoryTable.jsx
- * Table of safety stock, reorder point, EOQ with visual stock-level indicators.
+ * Safety stock, reorder point, EOQ and urgency per product, with stock-level bars.
  */
 import { useState } from 'react'
 import { useInventory } from '../hooks/useData'
 import { recomputeInventory } from '../api/client'
-import { RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react'
+import { RefreshCw, AlertTriangle, CheckCircle, Clock } from 'lucide-react'
+
+export const PRODUCT_EMOJI = { Milk: '🥛', Yogurt: '🍶', Cheese: '🧀', Eggs: '🥚', Bread: '🍞' }
+
+const STATUS = {
+  reorder_now: { cls: 'badge-danger', label: 'Reorder now', icon: AlertTriangle, color: 'var(--rose-600)' },
+  reorder_soon: { cls: 'badge-warning', label: 'Reorder soon', icon: Clock, color: 'var(--amber-500)' },
+  healthy: { cls: 'badge-ok', label: 'Healthy', icon: CheckCircle, color: 'var(--teal-500)' },
+}
 
 export default function InventoryTable() {
   const { data, loading, error, refetch } = useInventory()
   const [recomputing, setRecomputing] = useState(false)
+  const [recomputeError, setRecomputeError] = useState(null)
 
   const handleRecompute = async () => {
     setRecomputing(true)
+    setRecomputeError(null)
     try {
       await recomputeInventory()
       await refetch()
     } catch (e) {
-      alert('Recompute failed: ' + (e?.response?.data?.detail || e.message))
+      setRecomputeError(e?.response?.data?.detail || e.message)
     } finally {
       setRecomputing(false)
     }
@@ -31,36 +41,34 @@ export default function InventoryTable() {
   )
   if (error) return <div className="error-box">Error: {error}</div>
 
-  const reorderItems = data?.filter(i => i.needs_reorder) ?? []
+  const urgent = (data ?? []).filter(i => i.status !== 'healthy')
 
   return (
     <div>
-      {/* Reorder alerts */}
-      {reorderItems.map(item => (
-        <div key={item.product_id} className="reorder-alert">
+      {urgent.map(item => (
+        <div key={item.product_id} className={`reorder-alert ${item.status === 'reorder_now' ? 'danger' : ''}`}>
           <div className="reorder-alert-dot" />
           <div className="reorder-alert-text">
             <span className="reorder-alert-bold">{item.product_name}</span>
-            {' '}— Stock ({item.current_stock.toFixed(0)}) at or below reorder point ({item.reorder_point.toFixed(0)}).
+            {item.status === 'reorder_now'
+              ? <> — stock ({item.current_stock.toFixed(0)}) is at or below the reorder point ({item.reorder_point.toFixed(0)}). </>
+              : <> — hits its reorder point in <b>~{item.days_until_reorder} days</b>, inside the 7-day supplier lead time. </>}
             Suggested order: <span className="reorder-alert-bold">{item.reorder_quantity.toFixed(0)} units</span>.
           </div>
         </div>
       ))}
 
-      {/* Recompute button */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-        <button
-          id="recompute-inventory-btn"
-          className="btn btn-ghost"
-          onClick={handleRecompute}
-          disabled={recomputing}
-        >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, margin: '4px 0 14px', flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+          {urgent.length === 0 ? 'All products are above their reorder points.' : `${urgent.length} product${urgent.length > 1 ? 's need' : ' needs'} attention.`}
+        </div>
+        <button id="recompute-inventory-btn" className="btn btn-ghost" onClick={handleRecompute} disabled={recomputing}>
           <RefreshCw size={13} className={recomputing ? 'spin' : ''} />
           {recomputing ? 'Recomputing…' : 'Recompute'}
         </button>
       </div>
+      {recomputeError && <div className="error-box" style={{ marginBottom: 14 }}>Recompute failed: {recomputeError}</div>}
 
-      {/* Table */}
       <div className="table-wrap">
         <table>
           <thead>
@@ -70,52 +78,42 @@ export default function InventoryTable() {
               <th>Safety Stock</th>
               <th>Reorder Point</th>
               <th>EOQ (Order Qty)</th>
-              <th>Stock Level</th>
+              <th>Avg Demand / day</th>
+              <th>Stock vs Reorder Point</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {data?.map(item => {
+              const s = STATUS[item.status] ?? STATUS.healthy
+              const Icon = s.icon
+              // Bar scale: 0 → 2×ROP, so the reorder point sits at the midpoint marker
               const stockPct = Math.min(100, (item.current_stock / Math.max(item.reorder_point * 2, 1)) * 100)
-              const levelColor = item.needs_reorder
-                ? 'var(--accent-rose)'
-                : stockPct < 60
-                  ? 'var(--accent-amber)'
-                  : 'var(--accent-emerald)'
-
               return (
                 <tr key={item.product_id}>
-                  <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                    {item.product_name}
+                  <td>
+                    <div className="product-cell">
+                      <span className="product-avatar">{PRODUCT_EMOJI[item.product_name] ?? '📦'}</span>
+                      {item.product_name}
+                    </div>
                   </td>
-                  <td className="td-mono">{item.current_stock.toFixed(1)}</td>
+                  <td className="td-mono" style={{ fontWeight: 700 }}>{item.current_stock.toFixed(0)}</td>
                   <td className="td-mono">{item.safety_stock.toFixed(1)}</td>
                   <td className="td-mono">{item.reorder_point.toFixed(1)}</td>
                   <td className="td-mono">{item.reorder_quantity.toFixed(0)}</td>
-                  <td style={{ minWidth: 120 }}>
+                  <td className="td-mono">{item.avg_daily_demand?.toFixed(1)}</td>
+                  <td style={{ minWidth: 170 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div className="progress-track" style={{ flex: 1 }}>
-                        <div
-                          className="progress-fill"
-                          style={{ width: `${stockPct}%`, background: levelColor }}
-                        />
+                        <div className="progress-fill" style={{ width: `${stockPct}%`, background: s.color }} />
+                        <div title="Reorder point" style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 2, background: 'var(--text-primary)', opacity: 0.35 }} />
                       </div>
-                      <span style={{ fontSize: 11, color: levelColor, fontWeight: 600, minWidth: 32 }}>
-                        {stockPct.toFixed(0)}%
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, minWidth: 48, textAlign: 'right' }}>
+                        {item.days_until_reorder != null && item.status !== 'reorder_now' ? `${item.days_until_reorder}d left` : 'now'}
                       </span>
                     </div>
                   </td>
-                  <td>
-                    {item.needs_reorder ? (
-                      <span className="badge badge-warning">
-                        <AlertTriangle size={10} /> Reorder
-                      </span>
-                    ) : (
-                      <span className="badge badge-low">
-                        <CheckCircle size={10} /> OK
-                      </span>
-                    )}
-                  </td>
+                  <td><span className={`badge ${s.cls}`}><Icon size={11} /> {s.label}</span></td>
                 </tr>
               )
             })}
@@ -123,16 +121,10 @@ export default function InventoryTable() {
         </table>
       </div>
 
-      {/* Assumptions */}
-      <div style={{
-        marginTop: 16, padding: '10px 14px',
-        background: 'var(--violet-50)', borderRadius: 8,
-        border: '1px solid var(--violet-border)', fontSize: 11.5,
-        color: 'var(--violet-700)', lineHeight: 1.8,
-      }}>
-        <strong style={{ color: 'var(--violet-700)' }}>Assumptions:</strong>{' '}
-        Lead time = 7 days · Service level = 95% · Ordering cost = $50 · Holding cost rate = 20%/yr.
-        Current stock is simulated at reorder point (M5 has no real stock-on-hand data).
+      <div className="note">
+        <strong>Assumptions:</strong> Lead time = 7 days · Service level = 95% · Ordering cost = $50 · Holding cost = 20%/yr.
+        M5 has no stock-on-hand data, so current stock is simulated by replaying each product's real sales history
+        through this (reorder point, EOQ) policy. The bar marker shows the reorder point.
       </div>
     </div>
   )
